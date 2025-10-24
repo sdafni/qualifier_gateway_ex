@@ -1,85 +1,146 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 )
 
 const (
-	// Custom header name to determine routing
-	routingHeader = "X-Route-To"
-
 	// Gateway endpoint
-	gatewayPath = "/gateway_endpoint"
+	chatCompletionsPath = "/chat/completions"
 
 	// Default port
 	defaultPort = "8080"
+
+	// Default keys file
+	defaultKeysFile = "keys.json"
+
+	// Provider URLs
+	openAIURL    = "https://api.openai.com/v1/chat/completions"
+	anthropicURL = "https://api.anthropic.com/v1/messages"
+	deepseekURL  = "https://api.deepseek.com/v1/chat/completions"
 )
 
-type Gateway struct {
-	url1 string
-	url2 string
+// KeyConfig represents a single virtual key configuration
+type KeyConfig struct {
+	Provider string `json:"provider"`
+	APIKey   string `json:"api_key"`
 }
 
-func NewGateway(url1, url2 string) *Gateway {
+// Config represents the keys.json structure
+type Config struct {
+	VirtualKeys map[string]KeyConfig `json:"virtual_keys"`
+}
+
+type Gateway struct {
+	config *Config
+}
+
+func LoadConfig(filepath string) (*Config, error) {
+	file, err := os.ReadFile(filepath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var config Config
+	if err := json.Unmarshal(file, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config JSON: %w", err)
+	}
+
+	return &config, nil
+}
+
+func NewGateway(config *Config) *Gateway {
 	return &Gateway{
-		url1: url1,
-		url2: url2,
+		config: config,
 	}
 }
 
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Only handle the gateway endpoint
-	if r.URL.Path != gatewayPath {
+	// Only handle the chat completions endpoint
+	if r.URL.Path != chatCompletionsPath {
 		http.NotFound(w, r)
 		return
 	}
 
-	// Get the routing header value
-	routeTo := r.Header.Get(routingHeader)
+	// Only handle POST requests
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
+	// Extract virtual key from Authorization header
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+		log.Println("Request rejected: missing Authorization header")
+		return
+	}
+
+	// Extract bearer token
+	virtualKey := strings.TrimPrefix(authHeader, "Bearer ")
+	if virtualKey == authHeader {
+		http.Error(w, "Invalid Authorization header format. Expected 'Bearer <virtual-key>'", http.StatusUnauthorized)
+		log.Println("Request rejected: invalid Authorization header format")
+		return
+	}
+
+	// Look up virtual key in config
+	keyConfig, exists := g.config.VirtualKeys[virtualKey]
+	if !exists {
+		http.Error(w, "Invalid virtual key", http.StatusUnauthorized)
+		log.Printf("Request rejected: invalid virtual key: %s", virtualKey)
+		return
+	}
+
+	// Determine target URL based on provider
 	var targetURL string
-	switch strings.ToLower(routeTo) {
-	case "url1":
-		targetURL = g.url1
-	case "url2":
-		targetURL = g.url2
+	switch strings.ToLower(keyConfig.Provider) {
+	case "openai":
+		targetURL = openAIURL
+	case "anthropic":
+		targetURL = anthropicURL
+	case "deepseek":
+		targetURL = deepseekURL
 	default:
-		http.Error(w, fmt.Sprintf("Invalid or missing %s header. Must be 'url1' or 'url2'", routingHeader), http.StatusBadRequest)
-		log.Printf("Invalid routing header: %s", routeTo)
+		http.Error(w, "Unsupported provider", http.StatusInternalServerError)
+		log.Printf("Unsupported provider: %s", keyConfig.Provider)
 		return
 	}
 
-	// Construct the target URL with /endpoint path
-	target, err := url.Parse(targetURL + "/endpoint")
-	if err != nil {
-		http.Error(w, "Invalid target URL configuration", http.StatusInternalServerError)
-		log.Printf("Error parsing target URL: %v", err)
-		return
-	}
-
-	log.Printf("Routing request to: %s (route: %s)", target.String(), routeTo)
+	log.Printf("Routing request to %s provider (virtual key: %s)", keyConfig.Provider, virtualKey)
 
 	// Create a new request to forward
-	proxyReq, err := http.NewRequest(r.Method, target.String(), r.Body)
+	proxyReq, err := http.NewRequest(r.Method, targetURL, r.Body)
 	if err != nil {
 		http.Error(w, "Failed to create proxy request", http.StatusInternalServerError)
 		log.Printf("Error creating proxy request: %v", err)
 		return
 	}
 
-	// Copy headers from original request (excluding routing header)
+	// Copy headers from original request (excluding Authorization)
 	for name, values := range r.Header {
-		if name != routingHeader {
+		if name != "Authorization" {
 			for _, value := range values {
 				proxyReq.Header.Add(name, value)
 			}
 		}
+	}
+
+	// Set the real API key based on provider
+	switch strings.ToLower(keyConfig.Provider) {
+	case "openai", "deepseek":
+		// OpenAI and DeepSeek use Bearer token authentication
+		proxyReq.Header.Set("Authorization", "Bearer "+keyConfig.APIKey)
+	case "anthropic":
+		// Anthropic uses x-api-key header
+		proxyReq.Header.Set("x-api-key", keyConfig.APIKey)
+		proxyReq.Header.Set("anthropic-version", "2023-06-01")
 	}
 
 	// Forward the request
@@ -108,39 +169,38 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error copying response body: %v", err)
 	}
 
-	log.Printf("Request completed with status: %d", resp.StatusCode)
+	log.Printf("Request completed with status: %d (provider: %s)", resp.StatusCode, keyConfig.Provider)
 }
 
 func main() {
 	// Get configuration from environment variables or use defaults
-	url1 := os.Getenv("GATEWAY_URL1")
-	url2 := os.Getenv("GATEWAY_URL2")
+	keysFile := os.Getenv("KEYS_FILE")
+	if keysFile == "" {
+		keysFile = defaultKeysFile
+	}
+
 	port := os.Getenv("GATEWAY_PORT")
-
-	if url1 == "" {
-		url1 = "http://localhost:8081"
-		log.Printf("GATEWAY_URL1 not set, using default: %s", url1)
-	}
-
-	if url2 == "" {
-		url2 = "http://localhost:8084"
-		log.Printf("GATEWAY_URL2 not set, using default: %s", url2)
-	}
-
 	if port == "" {
 		port = defaultPort
 	}
 
-	gateway := NewGateway(url1, url2)
+	// Load configuration
+	config, err := LoadConfig(keysFile)
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
 
-	log.Printf("Starting gateway server on port %s", port)
-	log.Printf("URL1: %s", url1)
-	log.Printf("URL2: %s", url2)
-	log.Printf("Gateway endpoint: %s", gatewayPath)
-	log.Printf("Routing header: %s", routingHeader)
-	log.Println("Routes:")
-	log.Printf("  %s: url1 -> %s/endpoint", routingHeader, url1)
-	log.Printf("  %s: url2 -> %s/endpoint", routingHeader, url2)
+	// Create gateway
+	gateway := NewGateway(config)
+
+	log.Printf("Starting LLM Gateway Router on port %s", port)
+	log.Printf("Loaded configuration from: %s", keysFile)
+	log.Printf("Endpoint: POST %s", chatCompletionsPath)
+	log.Printf("Configured virtual keys: %d", len(config.VirtualKeys))
+	log.Println("Virtual key mappings:")
+	for vk, kc := range config.VirtualKeys {
+		log.Printf("  %s -> %s provider", vk, kc.Provider)
+	}
 
 	if err := http.ListenAndServe(":"+port, gateway); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
