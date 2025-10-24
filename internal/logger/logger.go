@@ -62,7 +62,7 @@ func (l *Logger) LogInteraction(entry LogEntry) {
 	// Log to console
 	log.Printf("LLM Interaction Log:\n%s", string(prettyJSON))
 
-	// Log to file without separator
+	// Log to file
 	logOutput := string(prettyJSON) + "\n"
 
 	if _, err := l.logFile.WriteString(logOutput); err != nil {
