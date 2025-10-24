@@ -13,8 +13,6 @@ logs/
 *.dll
 *.so
 *.dylib
-gateway
-gateway_test
 
 # Test binary, built with `go test -c`
 *.test
