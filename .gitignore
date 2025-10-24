@@ -4,6 +4,9 @@
 # Sensitive configuration files
 keys.json
 
+# Logs
+logs/
+
 # Binaries
 *.exe
 *.exe~
