@@ -1,104 +1,190 @@
-# Gateway Server
+# LLM Gateway Router
 
-A simple Go-based gateway server that routes HTTP requests based on a custom header.
+A production-ready Go-based gateway that routes LLM API requests to different providers (OpenAI, Anthropic, DeepSeek) based on virtual API keys.
 
 ## Features
 
-- Receives requests at `/gateway_endpoint`
-- Routes to `url1/endpoint` or `url2/endpoint` based on the `X-Route-To` header
-- Forwards all HTTP methods (GET, POST, PUT, DELETE, etc.)
-- Preserves request headers and body
-- Returns the upstream response to the client
+- **Virtual Key Routing**: Maps virtual API keys to real provider API keys
+- **Multi-Provider Support**: OpenAI, Anthropic (Claude), DeepSeek
+- **Unified Endpoint**: Single `/chat/completions` endpoint for all providers
+- **Comprehensive Logging**: Pretty-printed JSON logs with full request/response capture
+- **Modular Architecture**: Clean separation of concerns using internal packages
+- **Easy to Extend**: Add new providers by implementing a simple interface
 
 ## Configuration
 
-The gateway can be configured using environment variables:
+### Environment Variables
 
-- `GATEWAY_URL1`: Target URL for route "url1" (default: `http://localhost:8081`)
-- `GATEWAY_URL2`: Target URL for route "url2" (default: `http://localhost:8084`)
+- `KEYS_FILE`: Path to virtual keys configuration file (default: `keys.json`)
 - `GATEWAY_PORT`: Port to run the gateway server on (default: `8080`)
+
+### Virtual Keys Configuration
+
+Create a `keys.json` file with your virtual key mappings:
+
+```json
+{
+  "virtual_keys": {
+    "vk_user1_openai": {
+      "provider": "openai",
+      "api_key": "sk-real-openai-key-123"
+    },
+    "vk_user2_anthropic": {
+      "provider": "anthropic",
+      "api_key": "sk-ant-real-anthropic-key-456"
+    },
+    "vk_user3_deepseek": {
+      "provider": "deepseek",
+      "api_key": "sk-deepseek-key-abc123"
+    }
+  }
+}
+```
+
+**Note**: `keys.json` is gitignored by default to protect your API keys.
 
 ## Usage
 
-### Running the server
+### Running the Server
 
 ```bash
-# With default configuration
+# With default configuration (uses keys.json)
 go run main.go
 
-# With custom URLs
-GATEWAY_URL1=http://service1.example.com GATEWAY_URL2=http://service2.example.com go run main.go
+# With custom keys file
+KEYS_FILE=/path/to/custom-keys.json go run main.go
 
 # With custom port
 GATEWAY_PORT=3000 go run main.go
 ```
 
-### Building the binary
+### Building the Binary
 
 ```bash
 go build -o gateway
 ./gateway
 ```
 
-### Making requests
+### Making Requests
 
-The gateway expects a custom header `X-Route-To` with value `url1` or `url2`:
+Send requests to `/chat/completions` with a virtual API key in the Authorization header:
 
+#### OpenAI Request
 ```bash
-# Route to url1/endpoint
-curl -H "X-Route-To: url1" http://localhost:8080/gateway_endpoint
-
-# Route to url2/endpoint
-curl -H "X-Route-To: url2" http://localhost:8080/gateway_endpoint
-
-# POST request with body
-curl -X POST -H "X-Route-To: url1" -H "Content-Type: application/json" \
-  -d '{"key":"value"}' http://localhost:8080/gateway_endpoint
+curl -X POST http://localhost:8080/chat/completions \
+  -H "Authorization: Bearer vk_user1_openai" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
 ```
 
-## Testing locally
-
-To test the gateway locally, you can start simple backend servers:
-
-### Terminal 1 - Start backend service 1
+#### Anthropic Request
 ```bash
-# Simple HTTP server on port 8081
-python3 -m http.server 8081
+curl -X POST http://localhost:8080/chat/completions \
+  -H "Authorization: Bearer vk_user2_anthropic" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-3-5-sonnet-20241022",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 1024
+  }'
 ```
 
-### Terminal 2 - Start backend service 2
+#### DeepSeek Request
 ```bash
-# Simple HTTP server on port 8084
-python3 -m http.server 8084
+curl -X POST http://localhost:8080/chat/completions \
+  -H "Authorization: Bearer vk_user3_deepseek" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
 ```
 
-### Terminal 3 - Start gateway
+## Testing with Example Scripts
+
+The `examples/` directory contains Python test scripts:
+
 ```bash
-go run main.go
+cd examples
+pip install -r requirements.txt
+
+# Test OpenAI routing
+python test_openai.py "Tell me a joke"
+
+# Test Anthropic routing
+python test_anthropic.py "Explain quantum computing"
+
+# Test DeepSeek routing
+python test_deepseek.py "Write a haiku"
+
+# Test router validation (asks providers to identify themselves)
+python test_router.py
 ```
 
-### Terminal 4 - Test requests
-```bash
-# Test routing to url1
-curl -H "X-Route-To: url1" http://localhost:8080/gateway_endpoint
+## Logging
 
-# Test routing to url2
-curl -H "X-Route-To: url2" http://localhost:8080/gateway_endpoint
+All LLM interactions are logged to both console and file with complete request/response details:
+
+- **Console**: Pretty-printed JSON for easy reading
+- **File**: `logs/llm_interactions.json` - Pretty-printed JSON format
+
+### Log Format
+
+```json
+{
+  "timestamp": "2025-10-24T14:30:00Z",
+  "virtual_key": "vk_user1_openai",
+  "provider": "openai",
+  "method": "POST",
+  "status": 200,
+  "duration_ms": 1250,
+  "request": {
+    "model": "gpt-4",
+    "messages": [...]
+  },
+  "response": {
+    "choices": [...]
+  }
+}
 ```
 
 ## Error Handling
 
-- Returns `404 Not Found` for paths other than `/gateway_endpoint`
-- Returns `400 Bad Request` if `X-Route-To` header is missing or invalid
-- Returns `502 Bad Gateway` if the upstream server cannot be reached
-- Returns `500 Internal Server Error` for configuration errors
+- `404 Not Found`: Invalid endpoint (only `/chat/completions` supported)
+- `401 Unauthorized`: Missing or invalid virtual key
+- `405 Method Not Allowed`: Non-POST requests
+- `502 Bad Gateway`: Provider API unreachable
+- `500 Internal Server Error`: Configuration or provider errors
 
-## Request Flow
+## Architecture
 
-1. Client sends request to `http://localhost:8080/gateway_endpoint` with `X-Route-To` header
-2. Gateway reads the `X-Route-To` header value
-3. Gateway forwards the request to the appropriate backend:
-   - `url1` → `{GATEWAY_URL1}/endpoint`
-   - `url2` → `{GATEWAY_URL2}/endpoint`
-4. Gateway receives the response from the backend
-5. Gateway forwards the response back to the client
+The gateway uses a modular internal package structure:
+
+```
+internal/
+├── config/         # Configuration loading
+├── logger/         # Structured JSON logging
+├── virtualkey/     # Virtual key validation & lookup
+├── provider/       # Provider interface & implementations
+└── gateway/        # HTTP routing logic
+```
+
+See individual package documentation for details.
+
+## Adding New Providers
+
+1. Create a new file in `internal/provider/` (e.g., `gemini.go`)
+2. Implement the `Provider` interface:
+   ```go
+   type Gemini struct{}
+   func (g *Gemini) GetEndpoint() string { ... }
+   func (g *Gemini) SetAuthHeaders(req, key) { ... }
+   func (g *Gemini) GetName() string { return "gemini" }
+   ```
+3. Register in `NewRegistry()` in `provider.go`
+4. Add virtual keys to `keys.json`
+
+That's it! No changes needed to main.go or gateway code.

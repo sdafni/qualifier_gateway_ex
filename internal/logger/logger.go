@@ -9,7 +9,7 @@ import (
 
 const (
 	logsDir     = "logs"
-	logFilename = "llm_interactions.jsonl"
+	logFilename = "llm_interactions.json"
 )
 
 // LogEntry represents a logged LLM interaction
@@ -48,22 +48,20 @@ func New() (*Logger, error) {
 
 // LogInteraction logs an LLM interaction to both console and file
 func (l *Logger) LogInteraction(entry LogEntry) {
-	// Log to console (pretty-printed)
-	consoleJSON, err := json.MarshalIndent(entry, "", "  ")
+	// Pretty-print JSON for both console and file
+	prettyJSON, err := json.MarshalIndent(entry, "", "  ")
 	if err != nil {
-		log.Printf("Error marshaling log entry for console: %v", err)
-	} else {
-		log.Printf("LLM Interaction Log:\n%s", string(consoleJSON))
-	}
-
-	// Log to file (single line JSON)
-	fileJSON, err := json.Marshal(entry)
-	if err != nil {
-		log.Printf("Error marshaling log entry for file: %v", err)
+		log.Printf("Error marshaling log entry: %v", err)
 		return
 	}
 
-	if _, err := l.logFile.Write(append(fileJSON, '\n')); err != nil {
+	// Log to console
+	log.Printf("LLM Interaction Log:\n%s", string(prettyJSON))
+
+	// Log to file without separator
+	logOutput := string(prettyJSON) + "\n"
+
+	if _, err := l.logFile.WriteString(logOutput); err != nil {
 		log.Printf("Error writing to log file: %v", err)
 	}
 }
