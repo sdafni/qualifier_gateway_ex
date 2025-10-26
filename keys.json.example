@@ -1,0 +1,16 @@
+{
+  "virtual_keys": {
+    "vk_user1_openai": {
+      "provider": "openai",
+      "api_key": "sk-your-openai-key-here"
+    },
+    "vk_user2_anthropic": {
+      "provider": "anthropic",
+      "api_key": "sk-ant-your-anthropic-key-here"
+    },
+    "vk_user3_deepseek": {
+      "provider": "deepseek",
+      "api_key": "sk-your-deepseek-key-here"
+    }
+  }
+}

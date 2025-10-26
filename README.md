@@ -20,7 +20,17 @@ A Go-based gateway that routes LLM API requests to different providers (OpenAI, 
 
 ### Virtual Keys Configuration
 
-Create a `keys.json` in the project folder with your virtual key mappings:
+Create a `keys.json` file with your virtual key mappings:
+
+```bash
+# Copy the example template
+cp keys.json.example keys.json
+
+# Edit with your real API keys
+nano keys.json  # or use your preferred editor
+```
+
+Example `keys.json` structure:
 
 ```json
 {
@@ -60,6 +70,71 @@ MAX_REQUESTS_PER_HOUR=500  GATEWAY_PORT=3000  KEYS_FILE=/path/to/custom-keys.jso
 ```bash
 go build -o gateway
 ```
+
+### Running with Docker
+
+#### Using Docker Compose (Recommended)
+
+```bash
+# 1. Create your keys.json file (see Virtual Keys Configuration above)
+cp keys.json.example keys.json
+# Edit keys.json with your real API keys
+
+# 2. Start the gateway (uses ./keys.json by default)
+docker-compose up -d
+
+# Or specify a custom keys file location:
+KEYS_FILE_PATH=/path/to/your/keys.json docker-compose up -d
+
+# Customize other settings:
+KEYS_FILE_PATH=/path/to/keys.json \
+MAX_REQUESTS_PER_HOUR=500 \
+REQUEST_TIMEOUT=60s \
+GATEWAY_PORT=3000 \
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the gateway
+docker-compose down
+```
+
+#### Using Docker directly
+
+```bash
+# Build the image
+docker build -t llm-gateway .
+
+# Run with default keys.json in current directory
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/keys.json:/app/keys.json:ro \
+  -v $(pwd)/logs:/app/logs \
+  -e MAX_REQUESTS_PER_HOUR=100 \
+  -e REQUEST_TIMEOUT=30s \
+  --name llm-gateway \
+  llm-gateway
+
+# Or run with custom keys file location
+docker run -d \
+  -p 8080:8080 \
+  -v /path/to/your/keys.json:/app/keys.json:ro \
+  -v $(pwd)/logs:/app/logs \
+  -e MAX_REQUESTS_PER_HOUR=100 \
+  -e REQUEST_TIMEOUT=30s \
+  --name llm-gateway \
+  llm-gateway
+
+# View logs
+docker logs -f llm-gateway
+
+# Stop the container
+docker stop llm-gateway
+docker rm llm-gateway
+```
+
+**Note**: The `keys.json` file must exist on your host machine before starting the container.
 
 ### Making Requests
 

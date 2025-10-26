@@ -1,0 +1,21 @@
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-gateway
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    volumes:
+      # Mount keys.json from host (REQUIRED - create this file first)
+      # Override with: KEYS_FILE_PATH=/path/to/your/keys.json docker-compose up
+      - ${KEYS_FILE_PATH:-./keys.json}:/app/keys.json:ro
+      # Persist logs on host
+      - ./logs:/app/logs
+    environment:
+      - KEYS_FILE=/app/keys.json
+      - GATEWAY_PORT=8080
+      - MAX_REQUESTS_PER_HOUR=${MAX_REQUESTS_PER_HOUR:-100}
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-30s}
+    restart: unless-stopped

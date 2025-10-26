@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+gateway
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Logs
+logs/
+*.log
+
+# Keys (should be mounted at runtime)
+keys.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+
+# Examples
+examples/
