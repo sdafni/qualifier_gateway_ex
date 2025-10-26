@@ -22,6 +22,7 @@ type Gateway struct {
 	logger           *logger.Logger
 	usageTracker     *usage.Tracker
 	requestTimeout   time.Duration
+	httpClient       *http.Client
 }
 
 // New creates a new Gateway instance
@@ -32,6 +33,9 @@ func New(vkService *virtualkey.Service, providerRegistry *provider.Registry, log
 		logger:           log,
 		usageTracker:     tracker,
 		requestTimeout:   timeout,
+		httpClient: &http.Client{
+			Timeout: timeout,
+		},
 	}
 }
 
@@ -122,10 +126,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	prov.SetAuthHeaders(proxyReq, keyConfig.APIKey)
 
 	// Forward the request with timeout
-	client := &http.Client{
-		Timeout: g.requestTimeout,
-	}
-	resp, err := client.Do(proxyReq)
+	resp, err := g.httpClient.Do(proxyReq)
 	if err != nil {
 		http.Error(w, "Failed to forward request", http.StatusBadGateway)
 		log.Printf("Error forwarding request: %v", err)
