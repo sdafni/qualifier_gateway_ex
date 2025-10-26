@@ -9,6 +9,7 @@ import (
 
 	"gateway/internal/logger"
 	"gateway/internal/provider"
+	"gateway/internal/usage"
 	"gateway/internal/virtualkey"
 )
 
@@ -19,14 +20,16 @@ type Gateway struct {
 	vkService        *virtualkey.Service
 	providerRegistry *provider.Registry
 	logger           *logger.Logger
+	usageTracker     *usage.Tracker
 }
 
 // New creates a new Gateway instance
-func New(vkService *virtualkey.Service, providerRegistry *provider.Registry, log *logger.Logger) *Gateway {
+func New(vkService *virtualkey.Service, providerRegistry *provider.Registry, log *logger.Logger, tracker *usage.Tracker) *Gateway {
 	return &Gateway{
 		vkService:        vkService,
 		providerRegistry: providerRegistry,
 		logger:           log,
+		usageTracker:     tracker,
 	}
 }
 
@@ -54,6 +57,18 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Request rejected: %v", err)
 		return
 	}
+
+	// Check quota
+	if err := g.usageTracker.CheckQuota(virtualKey); err != nil {
+		// Get current stats for logging
+		requestCount, maxRequests, _ := g.usageTracker.GetStats(virtualKey)
+		http.Error(w, err.Error(), http.StatusTooManyRequests)
+		log.Printf("Request rejected: %v (virtual key: %s, usage: %d/%d)", err, virtualKey, requestCount, maxRequests)
+		return
+	}
+
+	// Record request
+	g.usageTracker.RecordRequest(virtualKey)
 
 	// Get key configuration
 	keyConfig, exists := g.vkService.GetKeyConfig(virtualKey)
@@ -83,7 +98,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Routing request to %s provider (virtual key: %s)", prov.GetName(), virtualKey)
+	// Get quota stats for logging
+	requestCount, maxRequests, _ := g.usageTracker.GetStats(virtualKey)
+	log.Printf("Routing request to %s provider (virtual key: %s, quota: %d/%d)", prov.GetName(), virtualKey, requestCount, maxRequests)
 
 	// Create proxy request
 	proxyReq, err := http.NewRequest(r.Method, prov.GetEndpoint(), bytes.NewReader(requestBody))
@@ -155,6 +172,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error writing response body to client: %v", err)
 	}
 
-	log.Printf("Request completed with status: %d (provider: %s, duration: %dms)",
-		resp.StatusCode, prov.GetName(), duration.Milliseconds())
+	// Get quota stats for logging
+	requestCount, maxRequests, _ = g.usageTracker.GetStats(virtualKey)
+	log.Printf("Request completed with status: %d (provider: %s, duration: %dms, quota: %d/%d)",
+		resp.StatusCode, prov.GetName(), duration.Milliseconds(), requestCount, maxRequests)
 }

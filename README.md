@@ -6,6 +6,8 @@ A Go-based gateway that routes LLM API requests to different providers (OpenAI, 
 
 - **Virtual Key Routing**: Maps virtual API keys to real provider API keys
 - **Multi-Provider Support**: OpenAI, Anthropic (Claude), DeepSeek
+- **Usage Quotas**: Global hourly request limits to prevent abuse
+- **Comprehensive Logging**: Pretty-printed JSON logs with full request/response capture
 
 ## Configuration
 
@@ -13,6 +15,7 @@ A Go-based gateway that routes LLM API requests to different providers (OpenAI, 
 
 - `KEYS_FILE`: Path to virtual keys configuration file (default: `keys.json`)
 - `GATEWAY_PORT`: Port to run the gateway server on (default: `8080`)
+- `MAX_REQUESTS_PER_HOUR`: Global hourly request quota (default: `100`)
 
 ### Virtual Keys Configuration
 
@@ -52,6 +55,9 @@ KEYS_FILE=/path/to/custom-keys.json go run main.go
 
 # With custom port
 GATEWAY_PORT=3000 go run main.go
+
+# With custom quota (e.g., 500 requests per hour)
+MAX_REQUESTS_PER_HOUR=500 go run main.go
 ```
 
 ### Building the Binary
@@ -98,6 +104,35 @@ curl -X POST http://localhost:8080/chat/completions \
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
+
+## Usage Quotas
+
+The gateway implements per-virtual-key hourly request quotas to prevent abuse:
+
+- **Default**: 100 requests per hour per virtual key
+- **Configurable**: Set via `MAX_REQUESTS_PER_HOUR` environment variable
+- **Scope**: Per virtual key (each key has its own independent counter)
+- **Window**: Hourly (resets independently per key)
+
+### Quota Enforcement
+
+When the quota is exceeded, the gateway returns:
+- **Status Code**: `429 Too Many Requests`
+- **Error Message**: `"quota exceeded: <N> requests per hour limit reached"`
+
+Example error response:
+```bash
+curl -X POST http://localhost:8080/chat/completions \
+  -H "Authorization: Bearer vk_user1_openai" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Hello!"}]}'
+
+# Response (when quota exceeded):
+# HTTP/1.1 429 Too Many Requests
+# quota exceeded: 100 requests per hour limit reached
+```
+
+Each virtual key's quota counter resets automatically every hour from its first use.
 
 ## Testing with Example Script
 
