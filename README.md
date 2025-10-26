@@ -55,25 +55,33 @@ Example `keys.json` structure:
 
 ## Usage
 
-### Running the Server
+### Run directly
 
-```bash
-# With default configuration (uses keys.json)
-go run main.go
-
-# With custom configuration
-MAX_REQUESTS_PER_HOUR=500  GATEWAY_PORT=3000  KEYS_FILE=/path/to/custom-keys.json go run main.go
-```
-
-### Building the Binary
+#### Build the Binary
 
 ```bash
 go build -o gateway
 ```
 
-### Running with Docker
+#### Run
+
+```bash
+# With default configuration (uses keys.json)
+go run main.go
+
+# Or with custom configuration
+MAX_REQUESTS_PER_HOUR=500  GATEWAY_PORT=3000  KEYS_FILE=/path/to/custom-keys.json go run main.go
+```
+
+
+
+
+### Docker
 
 #### Using Docker Compose (Recommended)
+```bash
+# Build the image
+docker build -t llm-gateway .
 
 ```bash
 # 1. Create your keys.json file (see Virtual Keys Configuration above)
@@ -93,11 +101,6 @@ REQUEST_TIMEOUT=60s \
 GATEWAY_PORT=3000 \
 docker-compose up -d
 
-# View logs
-docker-compose logs -f
-
-# Stop the gateway
-docker-compose down
 ```
 
 #### Using Docker directly
@@ -106,17 +109,6 @@ docker-compose down
 # Build the image
 docker build -t llm-gateway .
 
-# Run with default keys.json in current directory
-docker run -d \
-  -p 8080:8080 \
-  -v $(pwd)/keys.json:/app/keys.json:ro \
-  -v $(pwd)/logs:/app/logs \
-  -e MAX_REQUESTS_PER_HOUR=100 \
-  -e REQUEST_TIMEOUT=30s \
-  --name llm-gateway \
-  llm-gateway
-
-# Or run with custom keys file location
 docker run -d \
   -p 8080:8080 \
   -v /path/to/your/keys.json:/app/keys.json:ro \
@@ -126,15 +118,8 @@ docker run -d \
   --name llm-gateway \
   llm-gateway
 
-# View logs
-docker logs -f llm-gateway
-
-# Stop the container
-docker stop llm-gateway
-docker rm llm-gateway
 ```
 
-**Note**: The `keys.json` file must exist on your host machine before starting the container.
 
 ### Making Requests
 
