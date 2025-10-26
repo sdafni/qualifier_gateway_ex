@@ -9,6 +9,12 @@ A Go-based gateway that routes LLM API requests to different providers (OpenAI, 
 - **Usage Quotas**: Global hourly request limits to prevent abuse
 - **Comprehensive Logging**: Pretty-printed JSON logs with full request/response capture
 
+
+## Limitations:
+  No HTTPS Support
+  No Request Size Limits
+  Usage tracking is basic and inaccurate
+
 ## Configuration
 
 ### Environment Variables
