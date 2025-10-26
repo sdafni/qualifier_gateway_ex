@@ -15,7 +15,8 @@ A Go-based gateway that routes LLM API requests to different providers (OpenAI, 
 
 - `KEYS_FILE`: Path to virtual keys configuration file (default: `keys.json`)
 - `GATEWAY_PORT`: Port to run the gateway server on (default: `8080`)
-- `MAX_REQUESTS_PER_HOUR`: Global hourly request quota (default: `100`)
+- `MAX_REQUESTS_PER_HOUR`: Per-key hourly request quota (default: `100`)
+- `REQUEST_TIMEOUT`: Timeout for requests to LLM providers (default: `30s`). Use Go duration format (e.g., `30s`, `1m`, `500ms`)
 
 ### Virtual Keys Configuration
 
@@ -133,6 +134,24 @@ curl -X POST http://localhost:8080/chat/completions \
 ```
 
 Each virtual key's quota counter resets automatically every hour from its first use.
+
+### Timeout Handling
+
+The gateway implements request timeouts to prevent hanging on slow or unresponsive providers:
+
+- **Default Timeout**: 30 seconds
+- **Configurable**: Set via `REQUEST_TIMEOUT` environment variable (e.g., `REQUEST_TIMEOUT=60s`)
+- **Quota Behavior**: Failed requests (including timeouts) do NOT consume quota
+- **Only successful responses** (where the gateway receives a complete response from the provider) count toward the quota limit
+
+Example timeout scenario:
+```bash
+# If a provider takes longer than the configured timeout:
+# 1. Request is terminated
+# 2. Gateway returns 502 Bad Gateway
+# 3. Quota is NOT incremented
+# 4. User can retry without losing quota
+```
 
 ## Testing with Example Script
 

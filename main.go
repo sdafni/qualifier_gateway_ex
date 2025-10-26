@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"gateway/internal/config"
 	"gateway/internal/gateway"
@@ -15,9 +16,10 @@ import (
 )
 
 const (
-	defaultPort              = "8080"
-	defaultKeysFile          = "keys.json"
+	defaultPort               = "8080"
+	defaultKeysFile           = "keys.json"
 	defaultMaxRequestsPerHour = 100
+	defaultRequestTimeout     = 30 * time.Second
 )
 
 func main() {
@@ -38,6 +40,15 @@ func main() {
 			maxRequestsPerHour = quota
 		} else {
 			log.Printf("Invalid MAX_REQUESTS_PER_HOUR value, using default: %d", defaultMaxRequestsPerHour)
+		}
+	}
+
+	requestTimeout := defaultRequestTimeout
+	if timeoutEnv := os.Getenv("REQUEST_TIMEOUT"); timeoutEnv != "" {
+		if timeout, err := time.ParseDuration(timeoutEnv); err == nil && timeout > 0 {
+			requestTimeout = timeout
+		} else {
+			log.Printf("Invalid REQUEST_TIMEOUT value, using default: %s", defaultRequestTimeout)
 		}
 	}
 
@@ -64,13 +75,14 @@ func main() {
 	usageTracker := usage.New(maxRequestsPerHour)
 
 	// Create gateway
-	gw := gateway.New(vkService, providerRegistry, lgr, usageTracker)
+	gw := gateway.New(vkService, providerRegistry, lgr, usageTracker, requestTimeout)
 
 	// Log startup information
 	log.Printf("Starting LLM Gateway Router on port %s", port)
 	log.Printf("Loaded configuration from: %s", keysFile)
 	log.Printf("Endpoint: POST /chat/completions")
 	log.Printf("Per-key quota: %d requests per hour", maxRequestsPerHour)
+	log.Printf("Request timeout: %s", requestTimeout)
 	log.Printf("Configured virtual keys: %d", len(cfg.VirtualKeys))
 	log.Println("Virtual key mappings:")
 	for vk, kc := range cfg.VirtualKeys {

@@ -21,15 +21,17 @@ type Gateway struct {
 	providerRegistry *provider.Registry
 	logger           *logger.Logger
 	usageTracker     *usage.Tracker
+	requestTimeout   time.Duration
 }
 
 // New creates a new Gateway instance
-func New(vkService *virtualkey.Service, providerRegistry *provider.Registry, log *logger.Logger, tracker *usage.Tracker) *Gateway {
+func New(vkService *virtualkey.Service, providerRegistry *provider.Registry, log *logger.Logger, tracker *usage.Tracker, timeout time.Duration) *Gateway {
 	return &Gateway{
 		vkService:        vkService,
 		providerRegistry: providerRegistry,
 		logger:           log,
 		usageTracker:     tracker,
+		requestTimeout:   timeout,
 	}
 }
 
@@ -66,9 +68,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Request rejected: %v (virtual key: %s, usage: %d/%d)", err, virtualKey, requestCount, maxRequests)
 		return
 	}
-
-	// Record request
-	g.usageTracker.RecordRequest(virtualKey)
 
 	// Get key configuration
 	keyConfig, exists := g.vkService.GetKeyConfig(virtualKey)
@@ -122,8 +121,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Set provider-specific authentication headers
 	prov.SetAuthHeaders(proxyReq, keyConfig.APIKey)
 
-	// Forward the request
-	client := &http.Client{}
+	// Forward the request with timeout
+	client := &http.Client{
+		Timeout: g.requestTimeout,
+	}
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		http.Error(w, "Failed to forward request", http.StatusBadGateway)
@@ -139,6 +140,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error reading response body: %v", err)
 		return
 	}
+
+	// Record successful request (only after provider responds successfully)
+	g.usageTracker.RecordRequest(virtualKey)
 
 	// Parse response body for logging (handles decompression internally)
 	responseJSON := logger.ParseJSONBody(responseBody, resp.Header.Get("Content-Encoding"))
